@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自适应图标（Android 8+）：背景为纯色，前景是缩进到安全区内的鹈鹕图案。
+
+  为什么要拆两层：自适应图标会被启动器裁成圆形/方形/水滴等形状，只有中央
+  72/108 的区域保证可见。原图主体（鹈鹕）占画布约 90%，直接铺满会被裁掉，
+  因此前景层已把图案缩到安全区内，四周用取样自原图的同色背景补齐。
+
+  传统 mipmap-*/ic_launcher.png 仍然保留，供 Android 7 及不支持自适应图标的启动器使用。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

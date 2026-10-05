@@ -1,0 +1,28 @@
+# Flutter / Dart
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+
+# 依赖锁定：workspace 根保存 pubspec.lock，子包不单独提交
+packages/*/pubspec.lock
+
+# Android
+app/android/.gradle/
+app/android/local.properties
+app/android/key.properties
+app/android/app/*.jks
+app/android/app/*.keystore
+app/android/app/debug/
+app/android/app/profile/
+app/android/app/release/
+app/android/**/GeneratedPluginRegistrant.java
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 本地缓存与临时产物
+.pub-cache/

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WebView 文件选择的交付目录。
+
+  为什么需要它：`<input type="file">` 选完文件后，路径要交给 Chromium 的
+  **沙箱渲染进程**去读。`file://` 路径在现代 WebView 上默认不可跨进程访问
+  （`setAllowFileAccess` 对 targetSdk 30+ 默认为 false），因此必须改用
+  `content://` —— 这是 Android 为跨进程文件访问设计的正规机制。
+
+  为什么用独立的子目录：与 image_picker / file_picker 自己的临时文件分开，
+  避免混淆和误清理。选择器结果会被复制到这里，再经本 provider 生成 content URI。
+
+  注意 `<cache-path>` 对应 `context.getCacheDir()`
+  （`/data/user/0/<pkg>/cache`），**不包含** `code_cache`。所以 Dart 侧必须把
+  文件写到 `getCacheDir()` 下的 `webview_uploads/`，写到别处 provider 无法生成 URI。
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path
+        name="webview_uploads"
+        path="webview_uploads/" />
+</paths>

@@ -1,0 +1,123 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- 接收系统分享的图片时，需要读取媒体库里的原图。
+         Android 13（API 33）起细分为按类型的媒体权限；之前的版本用 READ_EXTERNAL_STORAGE。
+
+         为什么必须声明：分享 Intent 只给出一个 content:// URI，真正读取字节时
+         受媒体权限管控。缺权限时 contentResolver.openInputStream() 会抛异常，
+         表现为"分享进来了但文件是空的"—— 而且不报错、极难排查。 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- 官方前端的「添加位置」按钮用 `navigator.geolocation.getCurrentPosition`
+         （`InsertMenu.tsx:98`）。WebView 的定位有**两道**关卡，缺一不可：
+
+         1. 系统权限（这里声明的两项）—— 运行时还要动态申请；
+         2. WebView 自身的 GeolocationPermissions —— 由
+            `setGeolocationEnabled(true)` + `setGeolocationPermissionsPromptCallbacks`
+            放行（见 `web_app_page.dart`）。
+
+         只做其中一道都不生效：只有系统权限时 WebView 仍会静默拒绝；
+         只放行 WebView 时底层拿不到真实位置。
+
+         同时声明 FINE 与 COARSE：Android 12 起用户可以选择只给"大致位置"，
+         只声明 FINE 会导致该选项下请求直接失败。 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- 官方前端的「录制音频」用 `navigator.mediaDevices.getUserMedia({audio:true})`
+         （`useAudioRecorder.ts:141`）。WebView 的 getMediaDevices 请求会走
+         `WebChromeClient.onPermissionRequest`，宿主必须显式 grant —— 插件默认是
+         **deny**（见 `AndroidWebViewPermissionRequest`），所以不处理就完全录不了音。
+         同样需要：manifest 声明 + 运行时申请 + WebChromeClient grant，三者齐备。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- 用麦克风录音（而非通话）需要声明，否则部分 OEM 会限制录音音量/音源 -->
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+
+    <application
+        android:label="Peli"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:enableOnBackInvokedCallback="true"
+        android:localeConfig="@xml/locales_config"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- 分享目标：从其它应用直接新建 memo -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
+        </activity>
+
+        <!-- WebView 文件选择的交付通道。
+
+             为什么需要：网页的 `<input type="file">` 选完文件后，路径要交给
+             Chromium 的**沙箱渲染进程**读取。`file://` 在现代 WebView 上默认
+             不可跨进程访问（`setAllowFileAccess` 对 targetSdk 30+ 默认 false），
+             必须改用 `content://`。
+
+             不复用 image_picker 的 provider：那个只声明了 `<cache-path>` 且
+             与插件实现耦合；这里用自己的 authority，路径范围也自己控制。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.webview.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/webview_file_paths" />
+        </provider>
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+</manifest>

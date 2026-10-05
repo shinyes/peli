@@ -1,0 +1,2 @@
+# 仅保留 workspace 级别的原生构建配置（sqlite3 加密开关），
+# 不覆盖任何 package 的依赖解析。

@@ -1,0 +1,61 @@
+name: peli
+description: Android client for memos 0.31.0 — the official web frontend in a WebView, plus the native work a web page cannot do (session injection, attachment handling, encrypted credential store).
+publish_to: none
+version: 0.1.0+1
+resolution: workspace
+
+environment:
+  sdk: ^3.12.0
+  flutter: ">=3.38.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 登录：用户名密码 → 长效 PAT（本仓库内的纯 Dart 协议客户端）
+  memos_api: ^0.1.0
+
+  # 本地加密数据库：sqflite_sqlcipher（SQLCipher 4，原生库随包分发）
+  #
+  # 为什么不用 drift：官方推荐路径是 sqlite3 3.x 的 build hook（`source: sqlite3mc`），
+  # 但 sqlite3 >= 3.6.0 → hooks ^2.2.0 → record_use → meta ^1.19.0，
+  # 而当前 Flutter 把 meta 钉在 1.18.0；同时 drift_dev >= 2.32.0 又强制 sqlite3 ^3.0.0。
+  # 两条路都被依赖解析锁死，因此改用不依赖 sqlite3 包的 sqflite_sqlcipher，
+  # DAO 手写 SQL（见 lib/data/local/）。
+  sqflite_sqlcipher: ^3.4.0
+  path_provider: ^2.1.5
+  path: ^1.9.1
+
+  # 密钥与机密条目（Android 上由 Keystore 保护）
+  # 注意：flutter_secure_storage 11.x 依赖 win32 ^6.0.1，与 file_picker/image_picker
+  # 的 win32 ^5.x 冲突；10.3.4 同样支持「RSA-OAEP 包裹 + AES-GCM 存储」且依赖可解。
+  flutter_secure_storage: ^10.3.4
+
+  # 状态与路由
+  flutter_riverpod: ^3.4.3
+  go_router: ^17.0.0
+
+  # 主界面：内嵌官方 Web 前端
+  # 选 webview_flutter 而不是 flutter_inappwebview：前者由 Flutter 官方维护、
+  # 2026-07 仍在更新；后者最后发版是 2024-10，对 Android 15+ 的兼容存疑。
+  webview_flutter: ^4.14.1
+  # 直接用到 Android 侧的 setOnShowFileSelector（接管 <input type=file>）与权限回调，
+  # 必须显式声明而不是依赖 webview_flutter 的传递依赖
+  webview_flutter_android: ^4.14.1
+
+  # 文件进入应用：网页文件选择与系统分享
+  file_picker: ^10.3.3
+  image_picker: ^1.2.0
+
+  # 离线感知：Web 界面必须联网，断网时给出明确提示而不是白屏
+  connectivity_plus: ^7.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

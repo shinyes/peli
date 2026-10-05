@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  备份规则：本地库与密钥都必须排除在云备份和换机迁移之外。
+
+  原因（方案文档 §7.2）：
+  - 数据库用 Keystore 保护的密钥加密，而 Keystore 密钥**不可导出、不参与备份**；
+  - 若把密文库备份走，恢复后没有任何办法解开它，用户会看到"数据全没了"。
+  - Android 12+ 的 allowBackup="false" 只禁止云备份，不禁止 D2D 迁移，
+    因此三段规则都要显式排除。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="database" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="database" path="." />
+    </device-transfer>
+</data-extraction-rules>

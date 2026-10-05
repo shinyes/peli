@@ -1,0 +1,23 @@
+name: peli_workspace
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+
+workspace:
+  - app
+  - packages/memos_api
+
+# 加密数据库说明：
+#
+# 官方推荐路径是在这里配置 sqlite3 的 build hook 编入 SQLite3MultipleCiphers：
+#   hooks:
+#     user_defines:
+#       sqlite3:
+#         source: sqlite3mc
+#
+# 但 sqlite3 >= 3.6.0 依赖 hooks ^2.2.0 → record_use → meta ^1.19.0，
+# 而 Flutter 3.44.9 把 meta 钉在 1.18.0，版本无法解析。
+# 因此生产代码改用 sqflite_sqlcipher（SQLCipher 4）+ 显式 `PRAGMA key`。
+# 迁移步骤见仓库根目录方案文档 §12。
+#

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  允许自建实例使用自签证书（内网部署的常见情况）。
+
+  注意：这里只放行"用户主动信任"的场景，且不关闭证书校验链路；
+  release 包默认同样生效，因为自建 memos 是主要使用场景。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

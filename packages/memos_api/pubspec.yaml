@@ -1,0 +1,17 @@
+name: memos_api
+description: Pure-Dart client for the memos 0.31.0 server API (v1 REST + Personal Access Token).
+version: 0.1.0
+publish_to: none
+repository: https://github.com/usememos/memos
+resolution: workspace
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  http: ^1.5.0
+  meta: ^1.15.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.15

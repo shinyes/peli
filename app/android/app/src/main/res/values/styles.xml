@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <!-- Show a splash screen on the activity. Automatically removed when
+             the Flutter engine draws its first frame -->
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+    <!-- Theme applied to the Android Window as soon as the process has started.
+         This theme determines the color of the Android Window while your
+         Flutter UI initializes, as well as behind your Flutter UI while its
+         running.
+
+         This Theme is only used starting with V2 of Flutter's Android embedding. -->
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+
+        <!-- 全面屏（edge-to-edge）适配：
+             Android 15（API 35）起系统强制 edge-to-edge，窗口会真正铺满整块屏幕，
+             应用必须自己处理系统栏与刘海的内边距。
+
+             1) layoutInDisplayCutoutMode=shortEdges：允许内容延伸到刘海两侧，
+                配合 Flutter 侧的 SafeArea 才能既铺满又不会被挖孔挡住；
+             2) 系统栏全透明：状态栏/导航栏由应用内容透出，而不是被系统画成色块；
+             3) 启动主题也保持一致，避免冷启动瞬间出现白边再跳变。 -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
+</resources>

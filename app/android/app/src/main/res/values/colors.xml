@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 自适应图标的背景色：取样自图标原图四边的中位色 -->
+    <color name="ic_launcher_background">#FAF1D3</color>
+</resources>
