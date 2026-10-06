@@ -90,13 +90,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // 分享内容有两条来源：
-        // 1. [ShareReceiverActivity]（不可见跳板）转发来的 extras —— 文件已经复制到
-        //    私有缓存，且主界面始终在自己的任务里被复用，这是正常路径；
-        // 2. 直接从原始 Intent 提取 —— 跳板复制失败（缺媒体权限）时的兜底，
-        //    以及 adb / 直接指定组件启动的调试路径。
-        initialShare = ShareFiles.readPayload(this, intent) ?: extractShare(intent)
+        initialShare = resolveShare(intent)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -214,14 +208,39 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
 
-        val payload = ShareFiles.readPayload(this, intent) ?: extractShare(intent) ?: run {
-            // 读不出来时 extractShare 已经记下 URI 并去申请权限，
+        val payload = resolveShare(intent) ?: run {
+            // 读不出来时已经记下 URI 并去申请权限，
             // 拿到权限后会通过 [retryPendingShareAfterPermission] 补给 Dart。
 
             return
         }
 
         deliverShare(payload)
+    }
+
+    /// 解析分享内容，三种来源依次尝试：
+    /// 1. 跳板转发来的 **extras**（文件已复制进私有缓存）—— 正常路径；
+    /// 2. 跳板转发来的 **待重试 URI**（跳板那里复制失败，通常是缺媒体权限）；
+    /// 3. 原始 Intent 的 `EXTRA_STREAM` —— adb 调试或直接指定组件启动时走这条。
+    private fun resolveShare(intent: Intent): Map<String, Any?>? =
+        ShareFiles.readPayload(this, intent)
+            ?: extractRetryShare(intent)
+            ?: extractShare(intent)
+
+    /// 处理跳板转交的"待重试 URI"：当前就能读就直接读，读不了则申请媒体权限后重试。
+    private fun extractRetryShare(intent: Intent): Map<String, Any?>? {
+        val uris = ShareFiles.readRetryUris(intent)
+        if (uris.isEmpty()) return null
+
+        val copied = ShareFiles.copyAll(this, intent, uris)
+        Log.i(TAG, "[share] retry uris: ${uris.size} uri(s) -> cached ${copied.size}")
+        if (copied.isNotEmpty()) {
+            pendingShareUris = null
+            return ShareFiles.payload(copied)
+        }
+        pendingShareUris = uris
+        requestMediaPermissionIfNeeded()
+        return null
     }
 
     /// 把分享内容交给 Dart 侧。

@@ -36,15 +36,26 @@ class ShareReceiverActivity : Activity() {
         val copied = ShareFiles.copyAll(this, source, uris)
         Log.i(TAG, "[share] trampoline: ${uris.size} uri(s) -> cached ${copied.size}")
 
-        // 保留原始 action/type/EXTRA_STREAM：复制失败时的兜底路径要靠它。
-        val forward = Intent(source).apply {
-            setClass(this@ShareReceiverActivity, MainActivity::class.java)
+        // 转发 Intent **刻意不拷贝原文**：原文带着 FLAG_GRANT_READ_URI_PERMISSION 与
+        // 外来的 content:// URI，startActivity 时系统会校验"我们是否有权把这个 URI 的
+        // 授权继续转授"，一旦不持有可转授的权限就抛 SecurityException 打崩进程
+        //（真机复现：UriGrantsManagerService.checkGrantUriPermissionFromIntentUnlocked）。
+        // 复制成功时文件已在私有缓存，失败时把 URI 以字符串转交，两者都不需要原 URI。
+        val forward = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         if (copied.isNotEmpty()) {
             ShareFiles.writePayload(forward, ShareFiles.payload(copied))
+        } else {
+            ShareFiles.writeRetryUris(forward, uris)
         }
-        startActivity(forward)
+
+        try {
+            startActivity(forward)
+        } catch (error: Exception) {
+            // 兜底：分享链路的任何意外都不该让整个应用进程崩掉。
+            Log.e(TAG, "[share] forward to MainActivity failed: $error")
+        }
         finish()
     }
 

@@ -22,6 +22,9 @@ internal object ShareFiles {
     private const val EXTRA_NAMES = "peli.share.names"
     private const val EXTRA_MIME_TYPES = "peli.share.mimeTypes"
 
+    /// 复制失败时转交的"待重试 URI"（**以字符串形式**，见 [writeRetryUris]）。
+    private const val EXTRA_RETRY_URIS = "peli.share.retryUris"
+
     /// 一个已经复制到应用私有缓存的分享文件。
     data class Copied(val path: String, val name: String, val mimeType: String)
 
@@ -121,4 +124,21 @@ internal object ShareFiles {
         val file = File(path)
         return file.isFile && file.parentFile == context.cacheDir && file.name.startsWith(PREFIX)
     }
+
+    /// 记下"复制失败、待主界面重试"的 URI。
+    ///
+    /// 为什么用**字符串**而不是 `EXTRA_STREAM` + `FLAG_GRANT_READ_URI_PERMISSION`：
+    /// 后者会让系统在校验"能否把该 URI 的授权继续传递下去"时，发现我们并不持有可转授的
+    /// 权限，直接抛 `SecurityException` 把进程打崩（已在真机上复现：
+    /// `UriGrantsManagerService.checkGrantUriPermissionFromIntentUnlocked`）。
+    /// 字符串 extra 不参与任何授权传递，主界面拿到后再自行申请媒体权限重试。
+    fun writeRetryUris(intent: Intent, uris: List<Uri>) {
+        intent.putStringArrayListExtra(EXTRA_RETRY_URIS, ArrayList(uris.map { it.toString() }))
+    }
+
+    /// 读回待重试的 URI；没有则返回空列表。
+    fun readRetryUris(intent: Intent): List<Uri> =
+        intent.getStringArrayListExtra(EXTRA_RETRY_URIS).orEmpty().mapNotNull { raw ->
+            runCatching { Uri.parse(raw) }.getOrNull()
+        }
 }
