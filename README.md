@@ -189,6 +189,50 @@ export PUB_HOSTED_URL=https://pub.flutter-io.cn
 export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn
 ```
 
+### 打 tag 自动发版（GitHub Actions）
+
+推一个版本 tag 就会自动：跑测试与静态检查 → 编译 release APK → 校验产物（加密链路 +
+签名非 debug）→ 发布到 GitHub Release 并附上 APK。
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0        # 触发 .github/workflows/release.yml
+```
+
+也可以在 Actions 页面手动触发（`workflow_dispatch`），便于首次验证流水线。
+
+版本号映射：tag `v1.2.3` → `versionName=1.2.3`，`versionCode` 用 workflow 的 run number
+（单调递增，覆盖安装不会被系统拒绝）。
+
+**首次使用需要在仓库里配置 4 个 secrets**（签名材料刻意不进仓库，
+`key.properties` 与 `*.jks` 都在 `.gitignore` 里）。缺任何一个，流水线会**明确报错退出**，
+而不是静默产出 debug 签名的包：
+
+| Secret | 内容 |
+|---|---|
+| `KEYSTORE_BASE64` | 发布签名库 `app/android/app/memos-release.jks` 的 base64 |
+| `KEYSTORE_PASSWORD` | `key.properties` 里的 `storePassword` |
+| `KEY_ALIAS` | `keyAlias`（本地是 `memos`） |
+| `KEY_PASSWORD` | `keyPassword` |
+
+生成 `KEYSTORE_BASE64`（注意用**单行**输出，不要换行）：
+
+```powershell
+# Windows PowerShell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('app/android/app/memos-release.jks'))
+```
+
+```bash
+# Linux / macOS
+base64 -w0 app/android/app/memos-release.jks
+```
+
+配置位置：仓库 Settings → Secrets and variables → Actions → New repository secret。
+
+> 换了签名库或口令时记得同步更新 secrets。发版时**不需要**为了改版本号去动
+> `pubspec.yaml`：CI 用 tag 覆盖 `versionName`，用 run number 覆盖 `versionCode`；
+> `pubspec.yaml` 里的 `version:` 只影响本地构建。
+
 ### MIUI / HyperOS 设备侧要求
 
 | 现象 | 需要打开 |
