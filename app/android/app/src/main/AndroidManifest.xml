@@ -51,11 +51,16 @@
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules">
+        <!-- 单实例：整个应用只保留一个任务（Activity 也只有一个）。
+             - singleTask：从启动器、分享面板、PROCESS_TEXT 再次进入时，复用已有实例
+               （走 MainActivity.onNewIntent → Dart 侧注入分享），不会新开任务，
+               也不会在「最近任务」里留下两个条目；
+             - 不覆盖 taskAffinity：默认 affinity（包名）才能让 singleTask 稳定匹配到
+               本应用自己的任务。此前设为 "" 会让任务变成"无 affinity"，与单实例目标冲突。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
-            android:taskAffinity=""
+            android:launchMode="singleTask"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
