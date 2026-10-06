@@ -110,29 +110,49 @@ class WebAppPageState extends ConsumerState<WebAppPage> with WidgetsBindingObser
   }
 
   /// 清理一切以明文形式落盘的缓存。
+  ///
+  /// 两类目标：
+  /// 1. `webview_uploads/`：文件选择交付给渲染进程的**明文副本**（整个目录清空）；
+  /// 2. 缓存目录根下的 `shared_*`：系统分享进来、由跳板/主界面复制的**明文图片**
+  ///    （前缀须与 Kotlin 侧 `ShareFiles.PREFIX` 一致）。
+  ///
+  /// 为什么分享副本也要清：Dart 在"排队给编辑器"时就把字节读进内存了，文件之后
+  /// 不再需要；留着只会在磁盘上多一份明文媒体，与"本地不残留明文"的策略冲突。
+  ///
+  /// **不调用 clearCache()**：明文图片/视频已被 `cache: 'no-store'` 挡在 HTTP 缓存
+  /// 之外，所以不存在"事后要清"的东西；而清空整个 HTTP 缓存会把前端 bundle 一起
+  /// 清掉，导致每次回前台都要重下整个 SPA（实测冷缓存下 HTML 就 3.9 秒）。
+  /// 用户数据（API 响应）的缓存由官方前端自己管理，不归我们动。
   Future<void> _purgePlaintextCaches() async {
-    // ignore: avoid_print
-    print('[perf] purge plaintext caches at ${DateTime.now().toIso8601String()}');
-    // 只清"文件选择交付用的明文临时文件"。
-    //
-    // **不再 clearCache()**：明文图片/视频已被 `cache: 'no-store'` 挡在 HTTP 缓存
-    // 之外，所以不存在"事后要清"的东西；而清空整个 HTTP 缓存会把前端 bundle 一起
-    // 清掉，导致每次回前台都要重下整个 SPA（实测冷缓存下 HTML 就 3.9 秒）。
-    // 用户数据（API 响应）的缓存由官方前端自己管理，不归我们动。
+    int removed = 0;
+
+    // 1) 文件选择的交付目录：整目录清空。
     try {
       final Directory dir = await _webviewUploadDir();
       if (await dir.exists()) {
         await for (final FileSystemEntity entity in dir.list()) {
           try {
             await entity.delete(recursive: true);
+            removed++;
           } catch (_) {
             // 单个文件删不掉就跳过
           }
         }
       }
     } catch (_) {
+      // 目录不可用时忽略
+    }
+
+    // 2) 分享进来的明文副本：只认 `shared_` 前缀，别动引擎/插件的缓存文件。
+    try {
+      final Directory cache = await getApplicationCacheDirectory();
+      removed += await purgeSharedFiles(cache);
+    } catch (_) {
       // 同上
     }
+
+    // ignore: avoid_print
+    print('[perf] purge plaintext caches: removed $removed file(s) at ${DateTime.now().toIso8601String()}');
   }
 
   // ---------------------------------------------------------------------------
@@ -1713,6 +1733,35 @@ class _AttachmentImagePatcher {
 })();
 ''';
   }
+}
+
+/// 分享进来的明文临时文件前缀。
+///
+/// **必须与 Kotlin 侧 `ShareFiles.PREFIX` 保持一致**：跳板（`ShareReceiverActivity`）
+/// 与主界面用它给"复制到缓存目录的分享文件"命名，这里的清理逻辑据此识别并删除。
+const String sharedFilePrefix = 'shared_';
+
+/// 删除 [dir] 里以 [prefix] 开头的文件，返回实际删除的数量。
+///
+/// 只删文件、不递归进子目录（文件选择的交付目录另有整目录清理），也不碰其它缓存 ——
+/// 缓存目录里还有引擎与插件自己的东西。
+///
+/// 抽成顶层函数的理由：这条清理属于"本地不残留明文媒体"的硬约束，值得有主机可跑的
+/// 回归测试（见 `test/share_cleanup_test.dart`），而不是只能在真机上碰运气验证。
+Future<int> purgeSharedFiles(Directory dir, {String prefix = sharedFilePrefix}) async {
+  if (!await dir.exists()) return 0;
+  int removed = 0;
+  await for (final FileSystemEntity entity in dir.list()) {
+    if (entity is! File) continue;
+    if (!p.basename(entity.path).startsWith(prefix)) continue;
+    try {
+      await entity.delete();
+      removed++;
+    } catch (_) {
+      // 单个文件删不掉就跳过（例如被别的进程占用）
+    }
+  }
+  return removed;
 }
 
 /// 极简 MIME 猜测：只覆盖上传场景会用到的类型。
