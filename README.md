@@ -10,6 +10,7 @@ Flutter / 原生侧只做官方网页**做不到**的事 —— 也就是本文�
 |---|---|
 | 服务端 | memos **0.31.0 及以上**（v1 API + Personal Access Token） |
 | 平台 | Android（minSdk 24 / targetSdk 36，edge-to-edge） |
+| 架构 | **只发布 arm64-v8a**（2019 年后的设备；配置与原因见 `app/android/gradle.properties`） |
 | 工具链 | Flutter 3.44.9 / Dart 3.12.2 / NDK 28.2.13676358 |
 
 ---
@@ -193,6 +194,11 @@ storeFile=peli-release.jks
 >
 > 另外注意：debug 包与 release 包**签名不同**，两者无法互相覆盖安装
 > （`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），换签名安装前要先卸载。
+
+> 产物只包含 **arm64-v8a** 的原生库。`flutter build` 默认会按 `target-platform` 带上
+> armeabi-v7a 与 x86_64（并且会**清掉** `build.gradle.kts` 里写的 `abiFilters`），
+> 这里用 `disable-abi-filtering=true` 收紧到 arm64；CI 另外显式传
+> `--target-platform android-arm64` 并断言产物 ABI，细节见 `app/android/gradle.properties`。
 
 国内网络可先设置镜像：
 
