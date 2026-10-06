@@ -183,8 +183,16 @@ storeFile=peli-release.jks
 ```
 
 > `storeFile` 是**相对 `app/android/app/` 的路径**，且必须指向真实存在的库：把库改名或
-> 删除后忘了同步这里，`flutter build apk --release` 会直接失败（`null cannot be cast to
-> non-null type kotlin.String` 或找不到 keystore）。
+> 删除后忘了同步这里，构建会直接失败（`null cannot be cast to non-null type kotlin.String`
+> 或找不到 keystore）。
+
+> **本地日常开发只需要 debug 包**：`flutter build apk --debug`（或 `flutter run`）不碰发布
+> 签名，`key.properties` 里口令对不对都不影响它。
+> release 包优先由 CI 产出（打 tag）；本地要出 release 包则必须把口令填对 —— 口令不符时
+> 会**直接构建失败**，这是刻意的：宁可失败，也不要静默产出一个 debug 签名的"release"包。
+>
+> 另外注意：debug 包与 release 包**签名不同**，两者无法互相覆盖安装
+> （`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），换签名安装前要先卸载。
 
 国内网络可先设置镜像：
 
