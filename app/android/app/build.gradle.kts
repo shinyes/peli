@@ -34,6 +34,10 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         // 只打 64 位 ARM：2019 年后的 Android 设备都是 arm64，可显著减小包体。
+        //
+        // 注意：这条过滤只在 `android/gradle.properties` 里设了
+        // `disable-abi-filtering=true` 时才生效 —— 否则 Flutter 的 Gradle 插件会
+        // 按 target-platform 推导出三种 ABI 并把这里的选择清掉（见该文件的说明）。
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
