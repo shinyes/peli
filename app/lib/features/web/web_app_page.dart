@@ -171,8 +171,12 @@ class WebAppPageState extends ConsumerState<WebAppPage> with WidgetsBindingObser
   ///
   /// ## 用户操作
   ///
-  /// 编辑器的 `<input>` 只在编辑器打开时挂载，所以"点一下 +"省不掉：
-  /// 分享后打开编辑器、点「+」，注入脚本会把文件交给输入框（不弹系统选择器）。
+  /// **分享后打开编辑器即可，不需要再点「+」**：官方 `InsertMenu` 里那两个
+  /// `<input type="file">`（`className="hidden"`）是**随编辑器一起挂载**的，注入脚本挂的
+  /// MutationObserver 会在它们出现时自动把文件交给输入框（不弹系统选择器）。
+  ///
+  /// 因此这里**不弹任何提示**：用户能看到的反馈就是附件出现在编辑器里 ——
+  /// 之前那条"打开编辑器后点「+」"的 SnackBar 既不必要，也与实际交互不符。
   Future<void> _acceptShare(Object? payload) async {
     if (payload is! Map) return;
     final List<String> paths = <String>[
@@ -207,15 +211,10 @@ class WebAppPageState extends ConsumerState<WebAppPage> with WidgetsBindingObser
     if (files.isEmpty) return;
 
     _pendingShareFiles = files;
-    // 编辑器已打开时立刻生效；否则等输入框出现时注入。
+    // ignore: avoid_print
+    print('[share] queued ${files.length} file(s) for the editor');
+    // 编辑器已打开时立刻生效；否则等输入框随编辑器挂载时注入。
     await _injectPendingShareIntoPage();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('已接收 ${files.length} 张图片：打开编辑器后点「+」即可加入附件'),
-        duration: const Duration(seconds: 5),
-      ),
-    );
   }
 
   Future<void> _injectPendingShareIntoPage() async {
@@ -1654,7 +1653,7 @@ class _AttachmentImagePatcher {
   /// 脚本做两件事：
   /// 1. 存进 `window.__memosShareFiles`（惰性解码，避免大图卡顿）；
   /// 2. 若此刻已有文件输入框（编辑器已打开），立即注入并派发 `change`；
-  ///    否则挂 `MutationObserver`，等输入框出现（用户点「+」）时注入。
+  ///    否则挂 `MutationObserver`，等输入框随编辑器挂载时注入（无需点「+」）。
   static String buildShareInjectionScript(List<Map<String, Object?>> files) {
     final String payload = jsonEncode(files);
     return '''
@@ -1700,7 +1699,7 @@ class _AttachmentImagePatcher {
     if (inject(existing[i])) return 'injected';
   }
 
-  // 2) 否则等输入框出现（用户点「+」挂载编辑器时）
+  // 2) 否则等输入框出现（编辑器挂载时，两个 hidden input 随之出现）
   if (!window.__memosShareWatcher) {
     window.__memosShareWatcher = true;
     new MutationObserver(function () {
