@@ -178,9 +178,13 @@ adb install -r build/app/outputs/flutter-apk/app-release.apk
 ```properties
 storePassword=...
 keyPassword=...
-keyAlias=memos
-storeFile=memos-release.jks
+keyAlias=peli
+storeFile=peli-release.jks
 ```
+
+> `storeFile` 是**相对 `app/android/app/` 的路径**，且必须指向真实存在的库：把库改名或
+> 删除后忘了同步这里，`flutter build apk --release` 会直接失败（`null cannot be cast to
+> non-null type kotlin.String` 或找不到 keystore）。
 
 国内网络可先设置镜像：
 
@@ -210,24 +214,28 @@ git push origin v0.1.0        # 触发 .github/workflows/release.yml
 
 | Secret | 内容 |
 |---|---|
-| `KEYSTORE_BASE64` | 发布签名库 `app/android/app/memos-release.jks` 的 base64 |
+| `KEYSTORE_BASE64` | 发布签名库 `app/android/app/peli-release.jks` 的 base64 |
 | `KEYSTORE_PASSWORD` | `key.properties` 里的 `storePassword` |
-| `KEY_ALIAS` | `keyAlias`（本地是 `memos`） |
+| `KEY_ALIAS` | `keyAlias`（当前是 `peli`） |
 | `KEY_PASSWORD` | `keyPassword` |
 
 生成 `KEYSTORE_BASE64`（注意用**单行**输出，不要换行）：
 
 ```powershell
 # Windows PowerShell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes('app/android/app/memos-release.jks'))
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('app/android/app/peli-release.jks'))
 ```
 
 ```bash
 # Linux / macOS
-base64 -w0 app/android/app/memos-release.jks
+base64 -w0 app/android/app/peli-release.jks
 ```
 
 配置位置：仓库 Settings → Secrets and variables → Actions → New repository secret。
+
+> ⚠️ **本地与 CI 必须使用同一把签名库**：本地构建读 `app/android/key.properties`，
+> CI 从 secrets 还原。两边不是同一把钥匙时，本地包与 CI 包**互相无法覆盖安装**
+> （`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），用户只能卸载重装。
 
 > 换了签名库或口令时记得同步更新 secrets。发版时**不需要**为了改版本号去动
 > `pubspec.yaml`：CI 用 tag 覆盖 `versionName`，用 run number 覆盖 `versionCode`；

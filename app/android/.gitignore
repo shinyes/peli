@@ -12,3 +12,7 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+# 钥匙库的备份/旧版本副本（例如 `x.jks.old`、`x.keystore.bak`）——后缀变了就不再匹配
+# 上面的规则，很容易被顺手提交，这里一并挡住。
+**/*.jks.*
+**/*.keystore.*
