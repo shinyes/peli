@@ -1,7 +1,7 @@
 name: peli
 description: Android client for memos 0.31.0 — the official web frontend in a WebView, plus the native work a web page cannot do (session injection, attachment handling, encrypted credential store).
 publish_to: none
-version: 0.1.0+1
+version: 1.0.0+1
 resolution: workspace
 
 environment:
