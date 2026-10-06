@@ -1,11 +1,10 @@
-﻿package peli.lcyk.cc
+package peli.lcyk.cc
 
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
-import android.provider.OpenableColumns
 import android.util.Log
 import android.view.WindowManager
 import androidx.core.content.FileProvider
@@ -78,12 +77,6 @@ class MainActivity : FlutterActivity() {
     /// 是否已经申请过权限（用户拒绝后不再反复打扰）。
     private var permissionRequested = false
 
-    /// 缓存文件路径 → 原始文件名。
-    ///
-    /// 为什么需要：缓存文件名带时间戳前缀（`shared_<ts>_IMG_xxx.jpg`）用于防重名，
-    /// 但上传给服务端时应该用**原始文件名** —— 前缀会让服务端的文件名校验不通过。
-    private val cacheNameToOriginal = mutableMapOf<String, String>()
-
     /// 权限请求码。
     private val mediaPermissionRequestCode = 1001
 
@@ -97,9 +90,13 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val share = extractShare(intent)
-        initialShare = share
 
+        // 分享内容有两条来源：
+        // 1. [ShareReceiverActivity]（不可见跳板）转发来的 extras —— 文件已经复制到
+        //    私有缓存，且主界面始终在自己的任务里被复用，这是正常路径；
+        // 2. 直接从原始 Intent 提取 —— 跳板复制失败（缺媒体权限）时的兜底，
+        //    以及 adb / 直接指定组件启动的调试路径。
+        initialShare = ShareFiles.readPayload(this, intent) ?: extractShare(intent)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -210,17 +207,29 @@ class MainActivity : FlutterActivity() {
 
 
     /// App 已在运行时收到新的分享。
+    ///
+    /// 正常路径是 [ShareReceiverActivity] 用 `NEW_TASK` 把 Intent 送到已有实例上
+    /// （任务被带到前台，不会新建任务、也不会被并进分享方的任务）。
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val payload = extractShare(intent) ?: run {
+
+        val payload = ShareFiles.readPayload(this, intent) ?: extractShare(intent) ?: run {
             // 读不出来时 extractShare 已经记下 URI 并去申请权限，
             // 拿到权限后会通过 [retryPendingShareAfterPermission] 补给 Dart。
 
             return
         }
 
-        // Dart 侧可能还没准备好（例如页面正在重建）：先存起来，下次取时给。
+        deliverShare(payload)
+    }
+
+    /// 把分享内容交给 Dart 侧。
+    ///
+    /// Dart 可能还没准备好（例如页面正在重建）：先存起来，等它 `getInitialShare` 时再给。
+    private fun deliverShare(payload: Map<String, Any?>) {
+        val count = (payload["paths"] as? List<*>)?.size ?: 0
+        Log.i(TAG, "[share] deliver $count file(s) to Dart (channel=${shareChannel != null})")
         if (shareChannel == null) {
             initialShare = payload
         } else {
@@ -228,49 +237,31 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /// 从 Intent 里取出分享的图片，落盘后返回 {path, mimeType}。
+    /// 从**原始**分享 Intent 里提取内容（跳板复制失败或直接启动时的兜底路径）。
     ///
     /// 支持 `ACTION_SEND`（单张）与 `ACTION_SEND_MULTIPLE`（多张）。
     ///
     /// 读不到时会**申请媒体权限并重试**，见 [retryPendingShareAfterPermission]。
     private fun extractShare(intent: Intent?): Map<String, Any?>? {
-        if (intent == null) return null
-        val action = intent.action ?: return null
-        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return null
+        if (!ShareFiles.isShareAction(intent)) return null
+        val source = intent ?: return null
 
-        val uris: List<Uri> = when (action) {
-            Intent.ACTION_SEND -> {
-                @Suppress("DEPRECATION")
-                val single = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-                if (single != null) listOf(single) else emptyList()
-            }
-            else -> {
-                @Suppress("DEPRECATION")
-                val multiple = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
-                multiple ?: emptyList()
-            }
-        }
+        val uris = ShareFiles.streamUris(source)
         if (uris.isEmpty()) return null
 
-        val cached = uris.mapNotNull { copyToCache(it) }
-        Log.i(TAG, "[share] extractShare: ${uris.size} uri(s) -> cached ${cached.size}: $cached")
+        val copied = ShareFiles.copyAll(this, source, uris)
+        Log.i(TAG, "[share] extractShare: ${uris.size} uri(s) -> cached ${copied.size}")
 
         // 一张都没读出来：大概率是缺媒体权限（Android 13+ 的 READ_MEDIA_IMAGES）。
         // 记下 URI 去申请权限，拿到后重试。
-        if (cached.isEmpty()) {
+        if (copied.isEmpty()) {
             pendingShareUris = uris
             requestMediaPermissionIfNeeded()
             return null
         }
 
         pendingShareUris = null
-        return mapOf(
-            "paths" to cached,
-            // 同时给出**原始文件名**：缓存文件名带时间戳前缀（防重名），
-            // 上传时必须用原始名，否则服务端可能拒绝。
-            "names" to cached.map { cacheNameToOriginal[it] ?: File(it).name },
-            "mimeTypes" to uris.map { intent.type ?: "image/*" },
-        )
+        return ShareFiles.payload(copied)
     }
 
     /// 缺少媒体权限时申请一次。
@@ -328,47 +319,11 @@ class MainActivity : FlutterActivity() {
     /// 权限结果回来后重试读取，并把结果补给 Dart 侧。
     private fun retryPendingShareAfterPermission() {
         val uris = pendingShareUris ?: return
-        val cached = uris.mapNotNull { copyToCache(it) }
-        Log.i(TAG, "[share] retry after permission -> cached ${cached.size}")
-        if (cached.isEmpty()) return
+        val copied = ShareFiles.copyAll(this, intent, uris)
+        Log.i(TAG, "[share] retry after permission -> cached ${copied.size}")
+        if (copied.isEmpty()) return
         pendingShareUris = null
-        val payload = mapOf(
-            "paths" to cached,
-            "names" to cached.map { cacheNameToOriginal[it] ?: File(it).name },
-            "mimeTypes" to uris.map { "image/*" },
-        )
-        if (shareChannel == null) initialShare = payload
-        else shareChannel?.invokeMethod("onShared", payload)
-    }
-
-    /// 把分享过来的 content URI 复制到应用缓存目录，返回真实可读的文件路径。
-    ///
-    /// 为什么必须复制：`content://` 的读权限只对本次 Intent 有效，
-    /// 而网页是在用户点击「+」之后才去读这个文件 —— 那时授权可能已失效。
-    private fun copyToCache(uri: Uri): String? {
-        return try {
-            val name = displayName(uri)
-            val target = File(cacheDir, "shared_${System.currentTimeMillis()}_$name")
-            contentResolver.openInputStream(uri)?.use { input ->
-                target.outputStream().use { output -> input.copyTo(output) }
-            } ?: return null
-            cacheNameToOriginal[target.absolutePath] = name
-            target.absolutePath
-        } catch (error: Exception) {
-            null
-        }
-    }
-
-    /// 取原始文件名（用于保留扩展名，让网页能正确判断类型）。
-    private fun displayName(uri: Uri): String {
-        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (index >= 0 && cursor.moveToFirst()) {
-                val name = cursor.getString(index)
-                if (!name.isNullOrBlank()) return name
-            }
-        }
-        return uri.lastPathSegment?.substringAfterLast('/') ?: "shared_image"
+        deliverShare(ShareFiles.payload(copied))
     }
 
     private companion object {

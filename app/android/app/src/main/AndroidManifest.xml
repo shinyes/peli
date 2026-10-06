@@ -51,12 +51,13 @@
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules">
-        <!-- 单实例：整个应用只保留一个任务（Activity 也只有一个）。
-             - singleTask：从启动器、分享面板、PROCESS_TEXT 再次进入时，复用已有实例
-               （走 MainActivity.onNewIntent → Dart 侧注入分享），不会新开任务，
-               也不会在「最近任务」里留下两个条目；
+        <!-- 主界面：本应用唯一的可见 Activity。
+             - singleTask：从启动器再次进入时复用已有实例（走 onNewIntent），
+               不会新开任务，也不会在「最近任务」里留下两个条目；
              - 不覆盖 taskAffinity：默认 affinity（包名）才能让 singleTask 稳定匹配到
-               本应用自己的任务。此前设为 "" 会让任务变成"无 affinity"，与单实例目标冲突。 -->
+               本应用自己的任务。此前设为 "" 会让任务变成"无 affinity"，与单实例目标冲突；
+             - **不再声明 SEND / PROCESS_TEXT 过滤器**：分享入口交给下面的跳板，否则分享方
+               不带 NEW_TASK 的启动会把主界面并进它的任务（见 ShareReceiverActivity 注释）。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -73,6 +74,18 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+        </activity>
+
+        <!-- 分享入口：不可见跳板（NoDisplay，不创建窗口、不启动 Flutter 引擎）。
+             它把内容复制到私有缓存后，用 NEW_TASK 把主界面拉起（已有实例走
+             onNewIntent），随即 finish() —— 于是分享方的任务始终只有它自己，
+             最近任务里不会出现"图标是分享方、名字是 Peli"的第二个条目。
+             详见 ShareReceiverActivity 的类注释。 -->
+        <activity
+            android:name=".ShareReceiverActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.NoDisplay">
             <!-- 分享目标：从其它应用直接新建 memo -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
