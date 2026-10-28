@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:memos_api/memos_api.dart';
 import 'package:test/test.dart';
 
-/// 客户端只保留"登录 → 换 PAT → 版本守门"这条链路，测试也只覆盖它。
+/// 客户端只保留「登录 → 换 PAT → 版本守门 → 校验凭据」这条链路，测试也只覆盖它。
 void main() {
   group('InstanceProfile 版本守门', () {
     test('0.31.0 及以上通过，其余拒绝', () {
@@ -12,6 +12,8 @@ void main() {
       expect(const InstanceProfile(version: '0.31.1').isSupported, isTrue);
       expect(const InstanceProfile(version: '1.0.0').isSupported, isTrue);
       expect(const InstanceProfile(version: '26.09').isSupported, isTrue, reason: '日历版本');
+      expect(const InstanceProfile(version: '26.10.0-rc.2').isSupported, isTrue,
+          reason: '26.10 的发布候选版');
       expect(const InstanceProfile(version: '0.30.0').isSupported, isFalse);
       expect(const InstanceProfile(version: 'dev').isSupported, isFalse);
     });
@@ -23,10 +25,14 @@ void main() {
     });
   });
 
-  group('MemosClient', () {
-    test('baseUrl 归一化（去掉 /api/v1 与尾斜杠）', () {
+  group('MemosClient 路由（26.10 去掉了 /api/v1 段）', () {
+    test('baseUrl 归一化（去掉 /api/v1、/api 与尾斜杠）', () {
       expect(
         MemosClient(baseUrl: Uri.parse('https://a.example.com/api/v1')).baseUrl.toString(),
+        'https://a.example.com',
+      );
+      expect(
+        MemosClient(baseUrl: Uri.parse('https://a.example.com/api')).baseUrl.toString(),
         'https://a.example.com',
       );
       expect(
@@ -54,7 +60,7 @@ void main() {
       final SignInResult session = await client.signIn(username: 'steven', password: 'pw');
 
       expect(captured.method, 'POST');
-      expect(captured.url.path, '/api/v1/auth/signin');
+      expect(captured.url.path, '/api/auth/signin');
       expect(
         jsonDecode(body),
         <String, Object?>{
@@ -79,7 +85,7 @@ void main() {
       final String token = await client.createPersonalAccessToken(userId: '1');
 
       expect(captured.method, 'POST');
-      expect(captured.url.path, '/api/v1/users/1/personalAccessTokens');
+      expect(captured.url.path, '/api/users/1/personalAccessTokens');
       // expiresInDays=0 表示永不过期。
       expect(jsonDecode(body), <String, Object?>{'description': 'Android 客户端', 'expiresInDays': 0});
       expect(token, 'memos_pat_abc');
@@ -99,14 +105,95 @@ void main() {
       late http.BaseRequest captured;
       final MemosClient client = _client((http.BaseRequest request, String payload) {
         captured = request;
-        return _json(<String, Object?>{'version': '0.31.0'});
+        return _json(<String, Object?>{'version': '26.10.0-rc.2'});
       });
 
       final InstanceProfile profile = await client.getProfile();
 
       expect(captured.method, 'GET');
-      expect(captured.url.path, '/api/v1/instance/profile');
+      expect(captured.url.path, '/api/instance/profile');
       expect(profile.isSupported, isTrue);
+    });
+
+    test('getCurrentUser 走 /api/auth/me 并解析用户', () async {
+      late http.BaseRequest captured;
+      final MemosClient client = MemosClient(
+        baseUrl: Uri.parse('https://a.example.com'),
+        accessToken: 'memos_pat_abc',
+        httpClient: _RecordingClient(
+          responder: (http.BaseRequest request, String body) {
+            captured = request;
+            return _json(<String, Object?>{
+              'user': <String, Object?>{'name': 'users/steven', 'username': 'steven'},
+            });
+          },
+        ),
+      );
+
+      final RemoteUser user = await client.getCurrentUser();
+
+      expect(captured.method, 'GET');
+      expect(captured.url.path, '/api/auth/me');
+      expect(captured.headers['Authorization'], 'Bearer memos_pat_abc');
+      expect(user.id, 'steven');
+    });
+
+    test('老服务端：/api 下没有路由时退回 /api/v1，且之后固定用旧前缀', () async {
+      final List<String> paths = <String>[];
+      final MemosClient client = _client((http.BaseRequest request, String payload) {
+        paths.add(request.url.path);
+        // 0.31.x 只有 /api/v1/*：新前缀一律 404。
+        if (request.url.path.startsWith('/api/') && !request.url.path.startsWith('/api/v1/')) {
+          return http.Response('404 page not found', 404);
+        }
+        return _json(<String, Object?>{'version': '0.31.0'});
+      });
+
+      final InstanceProfile profile = await client.getProfile();
+      expect(profile.version, '0.31.0');
+      expect(paths, <String>['/api/instance/profile', '/api/v1/instance/profile']);
+      expect(client.apiPrefix, MemosClient.legacyApiPrefix);
+
+      // 第二次请求不再探测。
+      await client.getProfile();
+      expect(paths.last, '/api/v1/instance/profile');
+      expect(paths.length, 3);
+    });
+
+    test('26.10 的 410 Gone 同样触发回退（防御性）', () async {
+      final List<String> paths = <String>[];
+      final MemosClient client = _client((http.BaseRequest request, String payload) {
+        paths.add(request.url.path);
+        if (request.url.path.startsWith('/api/') && !request.url.path.startsWith('/api/v1/')) {
+          return http.Response(
+            jsonEncode(<String, Object?>{'code': 12, 'message': 'unimplemented'}),
+            410,
+            headers: const <String, String>{'content-type': 'application/json'},
+          );
+        }
+        return _json(<String, Object?>{'version': '0.31.0'});
+      });
+
+      await client.getProfile();
+      expect(paths.last, '/api/v1/instance/profile');
+    });
+
+    test('401 不触发前缀回退（否则密码错误会被误判成老服务端）', () async {
+      final List<String> paths = <String>[];
+      final MemosClient client = _client((http.BaseRequest request, String payload) {
+        paths.add(request.url.path);
+        return http.Response(
+          jsonEncode(<String, Object?>{'code': 16, 'message': 'authentication required'}),
+          401,
+          headers: const <String, String>{'content-type': 'application/json'},
+        );
+      });
+
+      await expectLater(
+        client.signIn(username: 'a', password: 'b'),
+        throwsA(isA<MemosApiException>()),
+      );
+      expect(paths, <String>['/api/auth/signin']);
     });
 
     test('带令牌时附上 Authorization 头', () async {
@@ -144,7 +231,8 @@ void main() {
           isA<MemosApiException>()
               .having((MemosApiException e) => e.statusCode, 'statusCode', 401)
               .having((MemosApiException e) => e.code, 'code', 16)
-              .having((MemosApiException e) => e.message, 'message', 'authentication required'),
+              .having((MemosApiException e) => e.message, 'message', 'authentication required')
+              .having((MemosApiException e) => e.isUnauthenticated, 'isUnauthenticated', isTrue),
         ),
       );
     });
@@ -162,14 +250,15 @@ void main() {
         throwsA(
           isA<MemosApiException>()
               .having((MemosApiException e) => e.message, 'message', contains('网络请求失败'))
-              .having((MemosApiException e) => e.statusCode, 'statusCode', isNull),
+              .having((MemosApiException e) => e.statusCode, 'statusCode', isNull)
+              .having((MemosApiException e) => e.isUnauthenticated, 'isUnauthenticated', isFalse),
         ),
       );
     });
   });
 }
 
-/// 构造一个"总是返回固定响应"的客户端，并把请求与请求体记进回调。
+/// 构造一个「总是返回固定响应」的客户端，并把请求与请求体记进回调。
 MemosClient _client(http.Response Function(http.BaseRequest request, String body) responder) =>
     MemosClient(
       baseUrl: Uri.parse('https://a.example.com'),

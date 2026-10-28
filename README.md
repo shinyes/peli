@@ -8,7 +8,7 @@ Flutter / 原生侧只做官方网页**做不到**的事 —— 也就是本文�
 
 | | |
 |---|---|
-| 服务端 | memos **0.31.0 及以上**（v1 API + Personal Access Token） |
+| 服务端 | memos **0.31.0 及以上**，含 **26.10+**（两代 REST 路由自动适配 + Personal Access Token） |
 | 平台 | Android（minSdk 24 / targetSdk 36，edge-to-edge） |
 | 架构 | **只发布 arm64-v8a**（2019 年后的设备；配置与原因见 `app/android/gradle.properties`） |
 | 工具链 | Flutter 3.44.9 / Dart 3.12.2 / NDK 28.2.13676358 |
@@ -31,8 +31,10 @@ Flutter / 原生侧只做官方网页**做不到**的事 —— 也就是本文�
 
 | 功能 | 做法 |
 |---|---|
-| 原生登录 | 填实例地址 + 用户名 + 密码 → `SignIn` → 立刻 `CreatePersonalAccessToken` 换取**长效 PAT**（失败则退回短期 token） |
+| 原生登录 | 填实例地址 + 用户名 + 密码 → `SignIn` → 立刻 `CreatePersonalAccessToken` 换取**长效 PAT**（26.10 起短效令牌只有 15 分钟且与账号密码哈希绑定，退回短期 token 等于必然掉线，因此失败会打 `[auth]` 日志） |
+| 路由适配 | 0.31.x 的 REST 前缀是 `/api/v1`，26.10 起改为 `/api`（旧路径返回 **410 Gone**）。首次请求自动探测并缓存前缀，两代服务端都能登录 |
 | 版本守门 | 登录时读实例 profile，版本 `< 0.31.0` 直接拒绝并说明原因 |
+| 凭据自检 | 冷启动时用 `GET /api/auth/me` 校验最近账号的 PAT：**只有服务端明确 401** 才回登录页重新签发，断网/超时一律放行（否则一次断网就把人踢下线） |
 | 凭据落盘 | PAT 存进 SQLCipher 加密库的 `accounts` 表；库密钥由 Android Keystore 保护 |
 | 免登录注入 | 页面脚本执行前**覆写 `localStorage`** 的 `getItem`/`setItem`/`removeItem`：`getItem` 返回内存副本，`setItem` 直接丢弃 → 前端无感拿到明文，**磁盘上没有明文令牌** |
 | 过期时间 | 故意写成 100 年后。PAT 默认永不过期；若让它"看起来过期"，前端会走 HttpOnly cookie 刷新流程，而 WebView 里没有 cookie，会 401 跳登录页 |

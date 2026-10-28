@@ -1,4 +1,4 @@
-/// 数据模型：严格对应 memos 0.31.0 的 `proto/api/v1/*.proto`。
+/// 数据模型：严格对应 memos 的 `proto/api/*.proto`（0.31.x 时位于 `proto/api/v1/`）。
 ///
 /// 解析约定（来自 protojson 行为）：
 /// - 字段名为 lowerCamelCase；

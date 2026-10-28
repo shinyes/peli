@@ -34,6 +34,24 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   bool _obscure = true;
   String? _error;
 
+  /// 本地保存的凭据已被实例拒绝（401），因此被退回登录页。
+  ///
+  /// 见 `providers.dart` 的 [_rejectedAccounts]：拿着失效令牌进 WebView 只会
+  /// 看到官方登录页，而页面里的登录不会落盘，等于每次都要重来。
+  bool _needsReauth = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 预填上一次用过的实例与用户名：重新登录时只需要再输一次密码。
+    final AppServices? services = ref.read(appServicesProvider).value;
+    final AccountRecord? last = services?.accounts.firstOrNull;
+    if (last == null) return;
+    _host.text = last.baseUrl;
+    _username.text = last.username ?? '';
+    _needsReauth = services?.rejectedAccountIds.contains(last.id) ?? false;
+  }
+
   @override
   void dispose() {
     _host.dispose();
@@ -85,10 +103,9 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   @override
   Widget build(BuildContext context) {
     final MemosThemeTokens tokens = context.tokens;
-    final List<AccountRecord> accounts = ref.watch(appServicesProvider).maybeWhen(
-          data: (AppServices value) => value.accounts,
-          orElse: () => const <AccountRecord>[],
-        );
+    final AppServices? services = ref.watch(appServicesProvider).value;
+    final List<AccountRecord> accounts = services?.accounts ?? const <AccountRecord>[];
+    final Set<String> rejected = services?.rejectedAccountIds ?? const <String>{};
 
     return Scaffold(
       backgroundColor: tokens.background,
@@ -149,6 +166,15 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: MemosTokens.textUi, color: tokens.mutedForeground),
                   ),
+                  if (_needsReauth) ...<Widget>[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Your saved session is no longer valid on this instance. '
+                      'Sign in again to get a new long-lived token.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: MemosTokens.text2xs, color: tokens.destructive),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   // 表单 gap-4
                   _field(
@@ -222,6 +248,17 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                     for (final AccountRecord account in accounts)
                       TextButton(
                         onPressed: () {
+                          if (rejected.contains(account.id)) {
+                            // 凭据已知失效：进 WebView 只会落到官方登录页，
+                            // 而那里的登录不落盘。改为填进表单，重新签发 PAT。
+                            setState(() {
+                              _host.text = account.baseUrl;
+                              _username.text = account.username ?? '';
+                              _needsReauth = true;
+                              _error = null;
+                            });
+                            return;
+                          }
                           ref.read(activeAccountIdProvider.notifier).set(account.id);
                           context.go('/');
                         },
